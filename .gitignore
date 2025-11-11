@@ -1,0 +1,21 @@
+# Python caches
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Local artifacts and results
+local_results/
+local_test/
+datasets/
+logs/
+
+# Environments
+.env
+.venv/
+venv/
+
+# OS / IDE files
+.DS_Store
+.idea/
+.vscode/

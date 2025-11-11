@@ -1,0 +1,19 @@
+# Web 服务
+fastapi>=0.100.0        # API 框架
+uvicorn>=0.23.0         # ASGI 服务器
+
+# 配置与日志
+pydantic>=2.0.0         # 数据模型（本项目使用 v2 接口）
+loguru>=0.7.0           # 结构化日志
+
+# 科学计算
+numpy>=1.24.0
+pandas>=2.0.0
+
+# 时序与模型
+gluonts                 # GluonTS 数据结构与辅助工具
+uni2ts                  # Moirai2 封装与预测器
+
+# 深度学习与权重格式
+torch>=2.1.0            # 按平台选择 CPU/GPU 版本安装
+safetensors>=0.4.2      # 安全权重文件读取
