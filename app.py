@@ -11,7 +11,7 @@
 
 
 import os
-from typing import Optional, List
+from typing import Optional, List, Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
@@ -30,6 +30,7 @@ class EvaluateRequest(BaseModel):
     taskCode: str = Field(..., description="任务代码（用于日志文件命名）")
     datasetPath: str = Field(..., description="CSV 文件路径")
     targetColumn: str = Field(..., description="目标列名")
+    feature: Literal["S", "MS", "M"] = Field("S", description="特征类型：S（单变量）、MS（多变量协变量-单目标）、M（多目标）")
     contextLength: int = Field(1680, description="上下文长度")
     predictionLength: int = Field(64, description="预测步数（moirai-2.0-R-small最大建议64）")
     batchSize: int = Field(8, description="预测批大小")
@@ -53,6 +54,7 @@ class ForecastRequest(BaseModel):
     taskCode: str = Field(..., description="任务代码（用于日志文件命名）")
     datasetPath: str = Field(..., description="CSV 文件路径")
     targetColumn: str = Field(..., description="目标列名")
+    feature: Literal["S", "MS", "M"] = Field("S", description="特征类型：S（单变量）、MS（多变量协变量-单目标）、M（多目标）")
     contextLength: int = Field(1680, description="上下文长度")
     predictionLength: int = Field(64, description="预测步数（moirai-2.0-R-small最大建议64）")
     batchSize: int = Field(8, description="预测批大小")
@@ -89,6 +91,7 @@ def evaluate(req: EvaluateRequest):
         result = evaluate_dataset_mse_mae(
             csv_path=req.datasetPath,
             target_column=req.targetColumn,
+            feature=req.feature,
             context_length=req.contextLength,
             prediction_length=req.predictionLength,
             batch_size=req.batchSize,
@@ -119,6 +122,7 @@ def forecast(req: ForecastRequest):
         result = forecast_with_quantiles(
             csv_path=req.datasetPath,
             target_column=req.targetColumn,
+            feature=req.feature,
             context_length=req.contextLength,
             prediction_length=req.predictionLength,
             batch_size=req.batchSize,

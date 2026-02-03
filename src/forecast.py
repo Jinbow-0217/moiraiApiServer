@@ -19,6 +19,7 @@ from uni2ts.model.moirai2 import Moirai2Forecast, Moirai2Module
 from .utils import (
     resolve_moirai2_local_path,
     load_csv_target,
+    load_csv_target_and_covariates,
     build_context_only_listdataset,
     compute_metadata,
     clip_context_for_extrapolation,
@@ -48,6 +49,7 @@ def _init_moirai2(metadata: Dict, context_length: int) -> tuple[Moirai2Forecast,
 def forecast_with_quantiles(
     csv_path: str,
     target_column: str,
+    feature: str,
     context_length: int,
     prediction_length: int,
     batch_size: int,
@@ -57,9 +59,20 @@ def forecast_with_quantiles(
     train_ratio: float,
 ):
     # 准备数据
-    raw = load_csv_target(csv_path, target_column)
+    if feature == "MS":
+        raw, covs, cov_cols = load_csv_target_and_covariates(csv_path, target_column, "date")
+    else:
+        raw = load_csv_target(csv_path, target_column)
+        covs = None
     prediction_length = enforce_moirai2_small_pred_len(prediction_length)
-    metadata = compute_metadata(raw, train_ratio, prediction_length)
+    metadata = compute_metadata(
+        raw,
+        train_ratio,
+        prediction_length,
+        feature=feature,
+        past_feat_dim=(covs.shape[0] if covs is not None else 0),
+        future_feat_dim=0,
+    )
 
     # 初始化并执行预测（仅使用末尾上下文进行未来外推）
     model, used_ctx = _init_moirai2(metadata, context_length)
@@ -71,6 +84,7 @@ def forecast_with_quantiles(
         used_ctx=used_ctx,
         csv_path=csv_path,
         date_column="date",
+        past_covs=covs if covs is not None and covs.size > 0 else None,
     )
     forecasts = list(predictor.predict(context_ds))
     if not forecasts:

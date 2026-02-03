@@ -70,12 +70,29 @@ def load_csv_date_series(csv_path: str, date_column: str = "date") -> pd.Series:
     return ts
 
 
+def load_csv_target_and_covariates(csv_path: str, target_column: str, date_column: str = "date") -> Tuple[np.ndarray, np.ndarray, List[str]]:
+    if not os.path.isfile(csv_path):
+        raise FileNotFoundError(f"未找到 CSV 文件：{csv_path}")
+    df = pd.read_csv(csv_path)
+    if target_column not in df.columns:
+        raise ValueError(f"目标列 '{target_column}' 不存在于 CSV。")
+    target = df[target_column].astype(float).to_numpy()
+    cols = [c for c in df.columns if c not in {target_column, date_column}]
+    num_df = df[cols].select_dtypes(include=[np.number])
+    cov_cols = list(num_df.columns)
+    if len(cov_cols) == 0:
+        return target, np.zeros((0, len(target)), dtype=float), []
+    covs = num_df.astype(float).to_numpy().T
+    return target, covs, cov_cols
+
+
 def build_context_only_listdataset(
     target: np.ndarray,
     freq: str,
     used_ctx: int,
     csv_path: Optional[str] = None,
     date_column: str = "date",
+    past_covs: Optional[np.ndarray] = None,
 ) -> ListDataset:
     """仅基于序列最后 `used_ctx` 步构造数据集，用于纯外推预测。
 
@@ -102,7 +119,10 @@ def build_context_only_listdataset(
         except Exception as e:
             logger.warning("读取日期列失败，降级使用占位时间戳；原因：{}", e)
     ctx = target[-used_ctx:]
-    return ListDataset([{"start": start_ts, "target": ctx}], freq=freq)
+    entry = {"start": start_ts, "target": ctx}
+    if past_covs is not None and past_covs.size > 0:
+        entry["past_feat_dynamic_real"] = past_covs[:, -used_ctx:]
+    return ListDataset([entry], freq=freq)
 
 
 def make_sliding_context_and_labels(
@@ -145,6 +165,8 @@ def build_listdataset_from_contexts(
     csv_path: Optional[str] = None,
     date_column: str = "date",
     step: Optional[int] = None,
+    past_covs: Optional[np.ndarray] = None,
+    context_length: Optional[int] = None,
 ) -> ListDataset:
     """将多个上下文片段封装为 GluonTS 的 `ListDataset`。
 
@@ -167,17 +189,29 @@ def build_listdataset_from_contexts(
                         start_idx,
                         len(dates),
                     )
-                    entries.append({"start": default_ts, "target": c})
+                    e = {"start": default_ts, "target": c}
+                    if past_covs is not None and past_covs.size > 0 and context_length is not None:
+                        e["past_feat_dynamic_real"] = past_covs[:, start_idx : start_idx + int(context_length)]
+                    entries.append(e)
                 else:
                     st = pd.Timestamp(dates.iloc[start_idx])
-                    entries.append({"start": st, "target": c})
+                    e = {"start": st, "target": c}
+                    if past_covs is not None and past_covs.size > 0 and context_length is not None:
+                        e["past_feat_dynamic_real"] = past_covs[:, start_idx : start_idx + int(context_length)]
+                    entries.append(e)
             logger.info("滑动窗口已使用 CSV 日期列作为起始时间戳，共 {} 个窗口。", len(entries))
             return ListDataset(entries, freq=freq)
         except Exception as e:
             logger.warning("读取日期列失败，滑动窗口降级使用占位时间戳；原因：{}", e)
 
     # 兜底：全部使用占位时间戳
-    entries = [{"start": default_ts, "target": c} for c in contexts]
+    entries = []
+    for i, c in enumerate(contexts):
+        e = {"start": default_ts, "target": c}
+        if past_covs is not None and past_covs.size > 0 and context_length is not None and step is not None:
+            start_idx = i * int(step)
+            e["past_feat_dynamic_real"] = past_covs[:, start_idx : start_idx + int(context_length)]
+        entries.append(e)
     return ListDataset(entries, freq=freq)
 
 
@@ -188,17 +222,20 @@ def create_tail_test_instances(full_ds: ListDataset, prediction_length: int):
     return test_data
 
 
-def compute_metadata(target: np.ndarray, train_ratio: float, prediction_length: int) -> Dict:
+def compute_metadata(target: np.ndarray, train_ratio: float, prediction_length: int, feature: str = "S", past_feat_dim: int = 0, future_feat_dim: int = 0) -> Dict:
     total_len = int(target.shape[0])
     train_len = int(total_len * train_ratio)
     test_len = max(total_len - train_len, 0)
+    target_dim = 1
+    if feature == "M":
+        target_dim = 1
     return {
         "total_length": total_len,
         "train_length": train_len,
         "test_length": test_len,
-        "target_dim": 1,
-        "feat_dynamic_real_dim": 0,
-        "past_feat_dynamic_real_dim": 0,
+        "target_dim": target_dim,
+        "feat_dynamic_real_dim": int(future_feat_dim),
+        "past_feat_dynamic_real_dim": int(past_feat_dim),
         "prediction_length": prediction_length,
     }
 
